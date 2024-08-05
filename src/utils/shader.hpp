@@ -66,7 +66,7 @@ struct PipelineShaderDetails {
   std::unordered_map<size_t, uint32_t> shader_hashes_by_index;
   std::unordered_map<reshade::api::pipeline_subobject_type, uint32_t> shader_hashes_by_type;
   std::unordered_map<reshade::api::pipeline_stage, uint32_t> shader_hashes_by_stage;
-  std::optional<reshade::api::pipeline> replacement_pipeline;
+  std::optional<reshade::api::pipeline> replacement_pipeline = std::nullopt;
   reshade::api::pipeline_stage replacement_stages = reshade::api::pipeline_stage{0};
   std::optional<std::string> tag;
   bool destroyed = false;
@@ -110,15 +110,6 @@ struct PipelineShaderDetails {
       // Shader may have been replaced. Get original hash
       if (auto pair = shader_replacements_inverse.find(shader_hash);
           pair != shader_replacements_inverse.end()) {
-#ifdef DEBUG_LEVEL_1
-        std::stringstream s;
-        s << "utils::shader::PipelineShaderDetails(Storing original ";
-        s << PRINT_CRC32(shader_hash);
-        s << "=>";
-        s << PRINT_CRC32(pair->second);
-        s << ")";
-        reshade::log_message(reshade::log_level::debug, s.str().c_str());
-#endif
         shader_hash = pair->second;
         replaced_shader_hashes.emplace(shader_hash);
       }
@@ -127,18 +118,6 @@ struct PipelineShaderDetails {
       this->shader_hashes_by_index.emplace(i, shader_hash);
       this->shader_hashes_by_type.emplace(subobject.type, shader_hash);
       this->shader_hashes_by_stage.emplace(stage, shader_hash);
-
-#ifdef DEBUG_LEVEL_1
-      std::stringstream s;
-      s << "utils::shader::PipelineShaderDetails(Storing ";
-      s << PRINT_CRC32(shader_hash);
-      s << ", index: " << i;
-      s << ", type: " << subobject.type;
-      s << ", stage: " << stage;
-      s << ")";
-      reshade::log_message(reshade::log_level::debug, s.str().c_str());
-#endif
-
     }
     this->subobjects = std::vector<reshade::api::pipeline_subobject>(subobjects, subobjects + subobject_count);
   }
@@ -193,22 +172,13 @@ static bool BuildReplacementPipeline(reshade::api::device* device, PipelineShade
   for (const auto& [index, shader_hash] : details.shader_hashes_by_index) {
     // Avoid double-replacement
     if (details.replaced_shader_hashes.contains(shader_hash)) {
-#ifdef DEBUG_LEVEL_1
       std::stringstream s;
-      s << "utils::shader::BuildReplacementPipeline(Bypassing ";
+      s << "utils::shader::BuildReplacementPipeline(bypassing ";
       s << PRINT_CRC32(shader_hash);
       s << ")";
-      reshade::log_message(reshade::log_level::debug, s.str().c_str());
-#endif
+      // reshade::log_message(reshade::log_level::debug, s.str().c_str());
       continue;
     }
-#ifdef DEBUG_LEVEL_2
-    std::stringstream s;
-    s << "utils::shader::BuildReplacementPipeline(Checking ";
-    s << PRINT_CRC32(shader_hash);
-    s << ")";
-    reshade::log_message(reshade::log_level::debug, s.str().c_str());
-#endif
     const std::shared_lock util_lock(internal::mutex);
     if (auto new_shader_pair = internal::runtime_replacements.find(shader_hash);
         new_shader_pair != internal::runtime_replacements.end()) {
@@ -230,13 +200,11 @@ static bool BuildReplacementPipeline(reshade::api::device* device, PipelineShade
         desc->code = malloc(desc->code_size);
         memcpy(const_cast<void*>(desc->code), new_shader.data(), desc->code_size);
       }
-#ifdef DEBUG_LEVEL_0
       std::stringstream s;
-      s << "utils::shader::BuildReplacementPipeline(Replacing ";
+      s << "utils::shader::BuildReplacementPipeline(replacing ";
       s << PRINT_CRC32(shader_hash);
       s << ")";
-      reshade::log_message(reshade::log_level::debug, s.str().c_str());
-#endif
+      // reshade::log_message(reshade::log_level::debug, s.str().c_str());
 
       if (auto pair = COMPATIBLE_SUBOBJECT_TYPE_TO_STAGE.find(subobject.type);
           pair != COMPATIBLE_SUBOBJECT_TYPE_TO_STAGE.end()) {
@@ -560,13 +528,6 @@ static void OnBindPipeline(
   cmd_list_data.pipeline_layout = details.layout;
 
   if (details.NeedsReplacementPipeline()) {
-#ifdef DEBUG_LEVEL_1
-    std::stringstream s;
-    s << "utils::shader::OnBindPipeline(NeedsReplacementPipeline: ";
-    s << (void*)pipeline.handle;
-    s << ")";
-    reshade::log_message(reshade::log_level::debug, s.str().c_str());
-#endif
     read_lock.unlock();
     {
       const std::unique_lock write_lock(device_data.mutex);
@@ -583,14 +544,6 @@ static void OnBindPipeline(
     }
     if (details.HasReplacementPipeline() && ((details.replacement_stages & compatible_stage) == compatible_stage)) {
       if (use_replace_on_bind) {
-#ifdef DEBUG_LEVEL_2
-        std::stringstream s;
-        s << "utils::shader::OnBindPipeline(Replacing on bind";
-        s << ", stage: " << stage;
-        s << ", pipeline: " << reinterpret_cast<void*>(pipeline.handle);
-        s << ")";
-        reshade::log_message(reshade::log_level::debug, s.str().c_str());
-#endif
         cmd_list->bind_pipeline(stage, details.replacement_pipeline.value());
       } else {
         cmd_list_data.pending_replacements[compatible_stage] = details.replacement_pipeline.value();
